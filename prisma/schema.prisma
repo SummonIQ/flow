@@ -1,0 +1,1246 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ===========================================
+// Agency Management Models for Flow
+// ===========================================
+
+/// Client/Account
+model Client {
+  id          String       @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  company     String?
+  tier        ClientTier   @default(STANDARD)
+  health      ClientHealth @default(HEALTHY)
+  owner       String?
+  notes       String?      @db.Text
+  website     String?
+  industry    String?
+  nextTouchAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  projects Project[]
+  meetings Meeting[]
+  invoices Invoice[]
+  contacts Contact[]
+  emails   Email[]
+
+  @@index([tier])
+  @@index([health])
+  @@index([owner])
+  @@map("clients")
+}
+
+/// Contact person at a client
+model Contact {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  email     String?
+  phone     String?
+  role      String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("contacts")
+}
+
+/// Project for a client or standalone managed project
+model Project {
+  id             String        @id @default(cuid())
+  clientId       String?
+  name           String        @unique
+  path           String?
+  description    String?       @db.Text
+  brandColors    Json?
+  status         ProjectStatus @default(PLANNING)
+  priority       Priority      @default(MEDIUM)
+  owner          String?
+  budget         Decimal?      @db.Decimal(12, 2)
+  startDate      DateTime?
+  dueDate        DateTime?
+  completedAt    DateTime?
+  starred        Boolean       @default(false)
+  packageManager String?
+  portRangeStart Int?
+  portRangeEnd   Int?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  client         Client?         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tasks          Task[]
+  milestones     Milestone[]
+  timeEntries    TimeEntry[]
+  tickets        Ticket[]
+  projectConfigs ProjectConfig[]
+  apps           App[]
+  databases      Database[]
+  teams          Team[]
+  summary        ProjectSummary?
+
+  @@index([clientId, status])
+  @@index([owner])
+  @@index([dueDate])
+  @@index([starred])
+  @@map("projects")
+}
+
+model ProjectSummary {
+  id                String   @id @default(cuid())
+  projectId         String   @unique
+  summary           String   @db.Text
+  technicalOverview String   @db.Text
+  generatedAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("project_summaries")
+}
+
+/// Task within a project
+model Task {
+  id          String     @id @default(cuid())
+  projectId   String
+  title       String
+  description String?    @db.Text
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  assignee    String?
+  dueDate     DateTime?
+  position    Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  completedAt DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@index([assignee])
+  @@map("tasks")
+}
+
+/// Project milestone
+model Milestone {
+  id          String    @id @default(cuid())
+  projectId   String
+  title       String
+  description String?
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, dueDate])
+  @@map("milestones")
+}
+
+/// Time tracking entry
+model TimeEntry {
+  id          String   @id @default(cuid())
+  projectId   String
+  userId      String?
+  description String?
+  hours       Decimal  @db.Decimal(5, 2)
+  date        DateTime @default(now())
+  billable    Boolean  @default(true)
+  invoiced    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, date])
+  @@index([billable, invoiced])
+  @@map("time_entries")
+}
+
+/// Meeting/Calendar event
+model Meeting {
+  id          String        @id @default(cuid())
+  clientId    String?
+  title       String
+  description String?       @db.Text
+  type        MeetingType   @default(INTERNAL)
+  status      MeetingStatus @default(SCHEDULED)
+  startTime   DateTime
+  endTime     DateTime
+  location    String?
+  meetingUrl  String?
+  attendees   String[]
+  notes       String?       @db.Text
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([startTime])
+  @@index([clientId])
+  @@index([type])
+  @@map("meetings")
+}
+
+/// External calendar connections (ICS, Apple, Google, Microsoft)
+model CalendarConnection {
+  id                String    @id @default(cuid())
+  provider          String // google, microsoft, apple, ics
+  providerAccountId String
+  accessToken       String    @db.Text
+  refreshToken      String?   @db.Text
+  expiresAt         DateTime?
+  calendarId        String
+  calendarName      String
+  isPrimary         Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([provider, calendarId])
+  @@index([provider])
+  @@map("calendar_connections")
+}
+
+/// Invoice for billing
+model Invoice {
+  id        String        @id @default(cuid())
+  clientId  String
+  number    String        @unique
+  status    InvoiceStatus @default(DRAFT)
+  issueDate DateTime      @default(now())
+  dueDate   DateTime
+  paidAt    DateTime?
+  subtotal  Decimal       @db.Decimal(12, 2)
+  tax       Decimal       @default(0) @db.Decimal(12, 2)
+  total     Decimal       @db.Decimal(12, 2)
+  currency  String        @default("USD")
+  notes     String?       @db.Text
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  client    Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  lineItems InvoiceItem[]
+  payments  Payment[]
+
+  @@index([clientId, status])
+  @@index([dueDate])
+  @@index([status])
+  @@map("invoices")
+}
+
+/// Invoice line item
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(12, 2)
+  amount      Decimal @db.Decimal(12, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+/// Payment received
+model Payment {
+  id         String        @id @default(cuid())
+  invoiceId  String
+  amount     Decimal       @db.Decimal(12, 2)
+  method     PaymentMethod @default(BANK_TRANSFER)
+  reference  String?
+  notes      String?
+  receivedAt DateTime      @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+/// Email message
+model Email {
+  id        String      @id @default(cuid())
+  clientId  String?
+  subject   String
+  body      String      @db.Text
+  from      String
+  to        String[]
+  cc        String[]
+  status    EmailStatus @default(DRAFT)
+  sentAt    DateTime?
+  threadId  String?
+  isRead    Boolean     @default(false)
+  isStarred Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([status])
+  @@index([threadId])
+  @@index([isRead, isStarred])
+  @@map("emails")
+}
+
+model SharedConfig {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  configType  ConfigType
+  appType     AppType?
+  content     Json
+  tags        String[]
+  isDefault   Boolean    @default(false)
+  usageCount  Int        @default(0)
+  locked      Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  createdBy   String?
+
+  @@index([configType, appType])
+  @@index([isDefault])
+  @@map("shared_configs")
+}
+
+model ConfigTemplate {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  configType  ConfigType
+  appType     AppType?
+  scope       ConfigScope
+  content     Json
+  rawContent  String?
+  version     Int         @default(1)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  createdBy   String?
+
+  history      ConfigHistory[]
+  projectLinks ProjectConfig[]
+  appLinks     AppConfig[]
+
+  @@unique([configType, appType, scope, version])
+  @@index([configType, appType, scope, isActive])
+  @@map("config_templates")
+}
+
+model ProjectConfig {
+  id           String     @id @default(cuid())
+  projectId    String
+  templateId   String?
+  configType   ConfigType
+  content      Json
+  overrides    Json?
+  isEnabled    Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  lastSyncedAt DateTime?
+  syncStatus   SyncStatus @default(PENDING)
+
+  project  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  template ConfigTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, configType])
+  @@index([projectId, configType, isEnabled])
+  @@map("project_configs")
+}
+
+model App {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  type        AppType
+  path        String
+  devPort     Int?
+  autoOpen    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  configs AppConfig[]
+
+  @@unique([projectId, name])
+  @@index([projectId, type])
+  @@map("apps")
+}
+
+model Database {
+  id               String   @id @default(cuid())
+  projectId        String
+  name             String
+  type             String
+  host             String
+  port             Int
+  username         String
+  password         String
+  database         String
+  status           String   @default("running")
+  connectionString String?
+  containerName    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+  @@index([projectId])
+  @@index([status])
+  @@map("databases")
+}
+
+model AppConfig {
+  id           String     @id @default(cuid())
+  appId        String
+  projectId    String
+  appType      AppType
+  templateId   String?
+  configType   ConfigType
+  content      Json
+  overrides    Json?
+  isEnabled    Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  lastSyncedAt DateTime?
+  syncStatus   SyncStatus @default(PENDING)
+
+  app      App             @relation(fields: [appId], references: [id], onDelete: Cascade)
+  template ConfigTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@unique([appId, configType])
+  @@index([projectId, appId, configType, isEnabled])
+  @@map("app_configs")
+}
+
+model ConfigHistory {
+  id         String   @id @default(cuid())
+  templateId String
+  version    Int
+  content    Json
+  changeLog  String?
+  changedBy  String?
+  createdAt  DateTime @default(now())
+
+  template ConfigTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  @@index([templateId, version])
+  @@map("config_history")
+}
+
+model Dependency {
+  id           String         @id @default(cuid())
+  packageName  String
+  version      String
+  type         DependencyType
+  scope        ConfigScope
+  appType      AppType?
+  projectId    String?
+  appId        String?
+  description  String?
+  isRequired   Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  lastSyncedAt DateTime?
+  syncStatus   SyncStatus     @default(PENDING)
+
+  @@unique([packageName, scope, appType, projectId, appId, type])
+  @@index([scope, appType, projectId, appId, type])
+  @@map("dependencies")
+}
+
+model SyncQueue {
+  id          String     @id @default(cuid())
+  entityType  String
+  entityId    String
+  operation   String
+  targetPath  String
+  content     Json?
+  status      SyncStatus @default(PENDING)
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(3)
+  error       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  processedAt DateTime?
+
+  @@index([status, createdAt])
+  @@index([entityType, entityId])
+  @@map("sync_queue")
+}
+
+model NetworkSync {
+  id         String   @id @default(cuid())
+  deviceId   String   @unique
+  deviceName String
+  ipAddress  String
+  port       Int
+  isOnline   Boolean  @default(false)
+  lastSeen   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([isOnline, lastSeen])
+  @@map("network_sync")
+}
+
+model FeatureConfig {
+  id        String   @id @default(cuid())
+  projectId String?
+  appId     String?
+  feature   Feature
+  provider  String
+  config    Json?
+  isEnabled Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, appId, feature])
+  @@index([feature, isEnabled])
+  @@map("feature_configs")
+}
+
+model Agent {
+  id                 String              @id @default(cuid())
+  name               String              @unique
+  role               AgentRole
+  specialization     AgentSpecialization @default(GENERALIST)
+  description        String?
+  systemPrompt       String              @db.Text
+  capabilities       Json?
+  limitations        Json?
+  isDefault          Boolean             @default(false)
+  isActive           Boolean             @default(true)
+  maxConcurrentTasks Int                 @default(3)
+  modelProvider      String              @default("openai")
+  modelName          String              @default("gpt-4")
+  temperature        Float               @default(0.7)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  createdBy          String?
+
+  teamMemberships    TeamMember[]
+  assignedTickets    Ticket[]            @relation("AssignedTickets")
+  ticketComments     TicketComment[]
+  memories           AgentMemory[]
+  createdDocuments   KnowledgeDocument[] @relation("KnowledgeDocCreatedBy")
+  ticketHandoffsFrom TicketHandoff[]     @relation("TicketHandoffFrom")
+  ticketHandoffsTo   TicketHandoff[]     @relation("TicketHandoffTo")
+
+  @@index([role, isActive])
+  @@index([isDefault, isActive])
+  @@map("agents")
+}
+
+model Workflow {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  stages          Json
+  transitions     Json
+  specializations Json?
+  isDefault       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+
+  teams Team[]
+
+  @@index([isDefault, isActive])
+  @@map("workflows")
+}
+
+model Team {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  projectId    String?
+  workflowId   String?
+  workflowData Json?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String?
+
+  workflow Workflow?    @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  project  Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  members  TeamMember[]
+  tickets  Ticket[]
+  upworkSkillProfile UpworkSkillProfile?
+  upworkJobs         UpworkJob[]
+  upworkProposalDrafts UpworkProposalDraft[]
+  upworkAutomationRuns UpworkAutomationRun[]
+
+  @@index([projectId, isActive])
+  @@index([workflowId])
+  @@map("teams")
+}
+
+model TeamMember {
+  id           String   @id @default(cuid())
+  teamId       String
+  agentId      String
+  workflowRole String?
+  order        Int      @default(0)
+  canAssign    Boolean  @default(false)
+  canReview    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  team  Team  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, agentId])
+  @@index([teamId, order])
+  @@map("team_members")
+}
+
+model Ticket {
+  id                   String         @id @default(cuid())
+  projectId            String
+  teamId               String?
+  title                String
+  description          String?
+  status               TicketStatus   @default(BACKLOG)
+  priority             TicketPriority @default(MEDIUM)
+  assignedToId         String?
+  labels               String[]
+  tags                 Json?
+  position             Int            @default(0)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  completedAt          DateTime?
+  createdBy            String?
+  acceptanceCriteria   Json?
+  businessRequirements String?
+  checklistItems       Json?
+  estimatedValue       String?
+  isFrontend           Boolean        @default(false)
+
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team       Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  assignedTo Agent?  @relation("AssignedTickets", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  comments  TicketComment[]
+  handoffs  TicketHandoff[]
+  documents KnowledgeDocument[]
+
+  @@index([projectId, status, position])
+  @@index([teamId, status])
+  @@index([assignedToId, status])
+  @@map("tickets")
+}
+
+model TicketComment {
+  id             String   @id @default(cuid())
+  ticketId       String
+  authorId       String?
+  authorType     String
+  authorName     String
+  content        String
+  isInternal     Boolean  @default(false)
+  requestsAction Boolean  @default(false)
+  actionType     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author Agent? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@index([authorId])
+  @@map("ticket_comments")
+}
+
+model TicketHandoff {
+  id              String   @id @default(cuid())
+  ticketId        String
+  fromAgentId     String
+  toAgentId       String
+  reason          String
+  instructions    String?
+  requestedAction String?
+  createdAt       DateTime @default(now())
+
+  ticket    Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fromAgent Agent  @relation("TicketHandoffFrom", fields: [fromAgentId], references: [id], onDelete: Restrict)
+  toAgent   Agent  @relation("TicketHandoffTo", fields: [toAgentId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@index([fromAgentId])
+  @@index([toAgentId])
+  @@map("ticket_handoffs")
+}
+
+model KnowledgeDocument {
+  id          String    @id @default(cuid())
+  title       String
+  content     String    @db.Text
+  type        String    @default("article")
+  category    String?
+  tags        String[]
+  ticketId    String?
+  projectId   String?
+  createdById String?
+  version     Int       @default(1)
+  parentId    String?
+  status      String    @default("draft")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime?
+
+  ticket    Ticket?             @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  createdBy Agent?              @relation("KnowledgeDocCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  parent    KnowledgeDocument?  @relation("KnowledgeDocParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children  KnowledgeDocument[] @relation("KnowledgeDocParent")
+
+  @@index([projectId, status])
+  @@index([ticketId])
+  @@index([category, status])
+  @@map("knowledge_documents")
+}
+
+model AgentMemory {
+  id           String    @id @default(cuid())
+  agentId      String
+  key          String
+  value        String
+  context      String?
+  type         String    @default("preference")
+  scope        String    @default("global")
+  scopeId      String?
+  confidence   Float     @default(1.0)
+  priority     Int       @default(1)
+  accessCount  Int       @default(0)
+  lastAccessed DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, key, scope, scopeId])
+  @@index([agentId, scope, priority])
+  @@index([type, scope])
+  @@map("agent_memories")
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  name        String
+  type        String
+  description String?
+  framework   String
+  version     String   @default("1.0.0")
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  files TemplateFile[]
+
+  @@unique([name, type])
+  @@map("templates")
+}
+
+model TemplateFile {
+  id          String   @id @default(cuid())
+  templateId  String
+  path        String
+  content     String
+  isDirectory Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, path])
+  @@index([templateId])
+  @@map("template_files")
+}
+
+// ===========================================
+// Enums
+// ===========================================
+
+enum ClientTier {
+  STANDARD
+  GROWTH
+  ENTERPRISE
+  VIP
+}
+
+enum ConfigType {
+  ESLINT
+  PRETTIER
+  TYPESCRIPT
+  TAILWIND
+  NEXTJS
+  POSTCSS
+  VITE
+  JEST
+  PLAYWRIGHT
+  VITEST
+  TURBO
+  SENTRY
+  VERCEL
+  BIOME
+  STYLELINT
+  TSUP
+  BUNFIG
+  GITIGNORE
+  PACKAGE_JSON
+  TSCONFIG
+  WINDSURF_RULES
+  AGENTS_MD
+  CLAUDE_MD
+  CURSOR_RULES
+  VSCODE
+  APPLAB_CONFIG
+  COMPONENTS_JSON
+  BABEL
+  EXPO
+}
+
+enum AppType {
+  WEB_APP
+  DESKTOP_APP
+  MOBILE_APP
+  API
+  MARKETING_SITE
+  LIBRARY
+  MONOREPO
+  CLI
+  EXTENSION
+  CUSTOM
+}
+
+enum ConfigScope {
+  GLOBAL
+  TEMPLATE
+  PROJECT
+  APP
+}
+
+enum DependencyType {
+  REGULAR
+  DEV
+  PEER
+  OPTIONAL
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCING
+  SYNCED
+  ERROR
+  CONFLICT
+}
+
+enum Feature {
+  AI
+  ANALYTICS
+  BLOB_STORAGE
+  DATABASE
+  EMAIL
+  ERROR_REPORTING
+  FINANCIAL_ACCOUNTS
+  PAYMENTS
+  REALTIME
+  USER_AUTH
+  SCRAPING
+  SPEED_INSIGHTS
+}
+
+enum AgentRole {
+  DESIGNER
+  FRONTEND_ENGINEER
+  BACKEND_ENGINEER
+  FULLSTACK_ENGINEER
+  QA_ENGINEER
+  DEVOPS_ENGINEER
+  PRODUCT_OWNER
+  SCRUM_MASTER
+  TECH_LEAD
+  CUSTOM
+}
+
+enum AgentSpecialization {
+  GENERALIST
+  REACT
+  VUE
+  ANGULAR
+  NODEJS
+  PYTHON
+  GOLANG
+  RUST
+  DATABASE
+  CLOUD_AWS
+  CLOUD_GCP
+  CLOUD_AZURE
+  KUBERNETES
+  TESTING
+  UI_UX
+  ACCESSIBILITY
+  PERFORMANCE
+  SECURITY
+  MOBILE
+  CUSTOM
+}
+
+enum TicketStatus {
+  BACKLOG
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  QA
+  BLOCKED
+  DONE
+  DESIGN
+  UNREFINED
+  READY
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ClientHealth {
+  HEALTHY
+  WATCH
+  AT_RISK
+  CHURNED
+}
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+  BLOCKED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MeetingType {
+  INTERNAL
+  CLIENT_CALL
+  ONBOARDING
+  REVIEW
+  DELIVERY
+  BILLING
+  OTHER
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PAID
+  PARTIAL
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  BANK_TRANSFER
+  CHECK
+  CASH
+  PAYPAL
+  STRIPE
+  OTHER
+}
+
+enum EmailStatus {
+  DRAFT
+  QUEUED
+  SENT
+  FAILED
+  RECEIVED
+}
+
+// ===========================================
+// Upwork Automation Models (Team-scoped)
+// ===========================================
+
+model UpworkSkillProfile {
+  id             String   @id @default(cuid())
+  teamId         String   @unique
+  displayName    String?
+  skillsText     String   @db.Text
+  skills         String[]
+  industries     String[]
+  stack          String?
+  offer          String?  @db.Text
+  proof          String?  @db.Text
+  hourlyRate     String?
+  minFixedBudget String?
+  maxFixedBudget String?
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  proposalDrafts UpworkProposalDraft[]
+
+  @@index([teamId])
+  @@map("upwork_skill_profiles")
+}
+
+model UpworkJob {
+  id               String          @id @default(cuid())
+  teamId           String
+  url              String
+  title            String
+  description      String?         @db.Text
+  source           String?
+  tags             String[]
+  paymentVerified  Boolean?
+  clientSpent      String?
+  proposals        String?
+  posted           String?
+  budgetLine       String?
+  budgetType       String?
+  experienceLevel  String?
+  budgetEstimate   String?
+  bids             String?
+  avgBid           String?
+  status           UpworkJobStatus @default(NEW)
+  matchScore       Float?
+  matchReason      String?         @db.Text
+  isEligible       Boolean         @default(false)
+  lastMatchedAt    DateTime?
+  lastExtractedAt  DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  team        Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  detail      UpworkJobDetail?
+  extracts    UpworkJobExtract[]
+  proposalDrafts   UpworkProposalDraft[]
+
+  @@unique([teamId, url])
+  @@index([teamId, status])
+  @@index([teamId, isEligible])
+  @@map("upwork_jobs")
+}
+
+model UpworkJobDetail {
+  id                 String   @id @default(cuid())
+  jobId              String   @unique
+  connectsRequired   Int?
+  duration           String?
+  projectType        String?
+  location           String?
+  activity           String?
+  clientLocation     String?
+  clientJobsPosted   Int?
+  clientHireRate     String?
+  clientSpent        String?
+  clientHourlyRange  String?
+  clientAvgHourly    String?
+  clientTotalHires   Int?
+  clientOpenJobs     Int?
+  experienceLevel    String?
+  weeklyHours        String?
+  hourlyRange        String?
+  fixedPrice         String?
+  skills             String[]
+  attachments        Json?
+  rawSections        Json?
+  lastExtractedAt    DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  job UpworkJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("upwork_job_details")
+}
+
+model UpworkJobExtract {
+  id              String             @id @default(cuid())
+  jobId           String
+  method          UpworkExtractMethod
+  sourceUrl       String?
+  html            String?            @db.Text
+  screenshotBase64 String?           @db.Text
+  screenshotMime  String?
+  extracted       Json?
+  error           String?            @db.Text
+  createdAt       DateTime           @default(now())
+
+  job UpworkJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, method, createdAt])
+  @@map("upwork_job_extracts")
+}
+
+model UpworkProposalDraft {
+  id          String               @id @default(cuid())
+  jobId       String
+  teamId      String
+  profileId   String?
+  proposal    String              @db.Text
+  bid         String?
+  questions   String[]
+  milestones  String[]
+  highlights  String[]
+  status      UpworkProposalStatus @default(DRAFT)
+  submitLog   String[]
+  submittedAt DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  job     UpworkJob          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  team    Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  profile UpworkSkillProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, status])
+  @@map("upwork_proposal_drafts")
+}
+
+model UpworkAutomationRun {
+  id          String                 @id @default(cuid())
+  teamId      String
+  status      UpworkAutomationStatus @default(RUNNING)
+  currentStep String?
+  error       String?                @db.Text
+  stats       Json?
+  startedAt   DateTime               @default(now())
+  endedAt     DateTime?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, status])
+  @@map("upwork_automation_runs")
+}
+
+enum UpworkJobStatus {
+  NEW
+  DETAILS_ENRICHED
+  MATCHED
+  PROPOSAL_GENERATED
+  READY_TO_SUBMIT
+  SUBMITTED
+  FAILED
+}
+
+enum UpworkExtractMethod {
+  LISTING_DOM
+  LISTING_AI
+  DETAIL_DOM
+  DETAIL_AI
+  DETAIL_VISION
+}
+
+enum UpworkProposalStatus {
+  DRAFT
+  READY
+  SUBMITTED
+  FAILED
+}
+
+enum UpworkAutomationStatus {
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+}
+
+// ===========================================
+// AI Agent Skills for Best Practices
+// ===========================================
+
+/// AI Agent Skill - follows Agent Skills spec
+model Skill {
+  id            String        @id @default(cuid())
+  name          String        @unique // kebab-case, 1-64 chars
+  displayName   String // Human-readable name
+  description   String        @db.Text // 1-1024 chars, describes what + when
+  category      SkillCategory
+  content       String        @db.Text // SKILL.md body content
+  license       String? // e.g., "MIT", "Apache-2.0"
+  compatibility String? // Environment requirements
+  author        String?
+  version       String?
+  allowedTools  String[] // Pre-approved tools
+  tags          String[] // Search/filter tags
+  isOfficial    Boolean       @default(false)
+  isEnabled     Boolean       @default(true)
+  usageCount    Int           @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([category])
+  @@index([isEnabled])
+  @@index([tags])
+  @@map("skills")
+}
+
+enum SkillCategory {
+  FRONTEND
+  BACKEND
+  FULLSTACK
+  DATABASE
+  DEVOPS
+  TESTING
+  SECURITY
+  PERFORMANCE
+  ACCESSIBILITY
+  DOCUMENTATION
+  ARCHITECTURE
+  TOOLING
+  AI_ML
+  MOBILE
+  API
+  STYLING
+  STATE_MANAGEMENT
+  BUILD_TOOLS
+  VERSION_CONTROL
+  DEBUGGING
+  DEPLOYMENT
+  MONITORING
+  OTHER
+}

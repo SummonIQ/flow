@@ -1,0 +1,95 @@
+.maczen-app {
+  --background: 255 255 255;
+  --foreground: 10 10 10;
+  --muted-foreground: 115 115 115;
+  --card: 255 255 255;
+  --border: 229 229 229;
+  --primary: 147 51 234;
+  color-scheme: light;
+  background-color: #ffffff !important;
+  color: rgb(10 10 10);
+}
+
+.maczen-app .bg-background {
+  background-color: rgb(var(--background));
+}
+.maczen-app .text-foreground {
+  color: rgb(var(--foreground));
+}
+.maczen-app .text-muted-foreground {
+  color: rgb(var(--muted-foreground));
+}
+.maczen-app .bg-card {
+  background-color: rgb(var(--card));
+}
+.maczen-app .border-border {
+  border-color: rgb(var(--border));
+}
+.maczen-app .text-primary {
+  color: rgb(var(--primary));
+}
+.maczen-app .bg-primary {
+  background-color: rgb(var(--primary));
+}
+.maczen-app .bg-primary\/10 {
+  background-color: rgb(var(--primary) / 0.1);
+}
+.maczen-app .border-primary\/50 {
+  border-color: rgb(var(--primary) / 0.5);
+}
+.maczen-app .text-primary-foreground {
+  color: white;
+}
+.maczen-app .bg-secondary {
+  background-color: rgb(var(--muted-foreground) / 0.1);
+}
+.maczen-app .text-secondary-foreground {
+  color: rgb(var(--foreground));
+}
+.maczen-app .glass-card {
+  background: rgb(var(--background) / 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgb(var(--border));
+}
+
+@keyframes aurora-drift {
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateX(-48%) translateY(-10px) rotate(1deg);
+  }
+  50% {
+    transform: translateX(-52%) translateY(5px) rotate(-1deg);
+  }
+  75% {
+    transform: translateX(-49%) translateY(-5px) rotate(0.5deg);
+  }
+}
+
+@keyframes aurora-drift-reverse {
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateX(-52%) translateY(8px) rotate(-0.5deg);
+  }
+  50% {
+    transform: translateX(-48%) translateY(-8px) rotate(1deg);
+  }
+  75% {
+    transform: translateX(-51%) translateY(4px) rotate(-0.5deg);
+  }
+}
+
+@keyframes hue-sweep {
+  0%,
+  100% {
+    filter: hue-rotate(0deg);
+  }
+  50% {
+    filter: hue-rotate(15deg);
+  }
+}
